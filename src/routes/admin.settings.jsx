@@ -3,6 +3,7 @@ import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
 import { supabase } from "@/integrations/supabase/client";
 import { toast } from "sonner";
 import { StateBox } from "@/components/site/Shared";
+import { RateLimitPanel } from "@/components/site/RateLimitPanel";
 export const Route = createFileRoute("/admin/settings")({
     component: AdminSettings,
 });
@@ -83,6 +84,10 @@ function AdminSettings() {
     return (<div className="space-y-6">
       <div className="flex items-center justify-between">
         <h1 className="text-2xl font-bold">Site Settings & Profile</h1>
+      </div>
+
+      <div className="max-w-4xl">
+        <RateLimitPanel compact={false} />
       </div>
 
       <form onSubmit={handleSave} className="space-y-8 max-w-4xl">

@@ -1,8 +1,13 @@
 import { createFileRoute, Link, useNavigate } from "@tanstack/react-router";
-import { ArrowLeft, Loader2, ShieldCheck } from "lucide-react";
-import { useState } from "react";
+import { ArrowLeft, Loader2, ShieldAlert, ShieldCheck } from "lucide-react";
+import { useEffect, useState } from "react";
 import { toast } from "sonner";
 import { supabase } from "@/integrations/supabase/client";
+import {
+  checkLoginRateLimit,
+  recordLoginFailure,
+  resetLoginAttempts,
+} from "@/lib/rate-limit";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
@@ -14,7 +19,7 @@ const ADMIN_PASS = "Moin@786";
 export const Route = createFileRoute("/admin_/login")({
   head: () => ({
     meta: [
-      { title: "Admin Login — MD Moin Uddin Ahmed" },
+      { title: "Admin Login — Mohammed Moinuddin Ahmed" },
       { name: "description", content: "Sign in to manage bookings, leads, and portfolio content." },
       { name: "robots", content: "noindex" },
     ],
@@ -27,13 +32,29 @@ function Login() {
   const [email, setEmail] = useState("");
   const [password, setPassword] = useState("");
   const [busy, setBusy] = useState(false);
+  const [rateState, setRateState] = useState(() => checkLoginRateLimit(""));
+
+  useEffect(() => {
+    const t = setInterval(() => {
+      setRateState(checkLoginRateLimit(email));
+    }, 1000);
+    return () => clearInterval(t);
+  }, [email]);
 
   async function submit(e) {
     e.preventDefault();
     const trimmedEmail = email.trim().toLowerCase();
+    const limitCheck = checkLoginRateLimit(trimmedEmail);
+    setRateState(limitCheck);
+    if (!limitCheck.allowed) {
+      toast.error(limitCheck.reason);
+      return;
+    }
+
     setBusy(true);
     try {
       if (trimmedEmail === ADMIN_EMAIL && password === ADMIN_PASS) {
+        resetLoginAttempts();
         localStorage.setItem(
           ADMIN_SESSION_KEY,
           JSON.stringify({ email: ADMIN_EMAIL, loggedInAt: new Date().toISOString() }),
@@ -46,6 +67,7 @@ function Login() {
 
       const { error } = await supabase.auth.signInWithPassword({ email: trimmedEmail, password });
       if (error) throw error;
+      resetLoginAttempts();
       localStorage.setItem(
         ADMIN_SESSION_KEY,
         JSON.stringify({ email: trimmedEmail, loggedInAt: new Date().toISOString() }),
@@ -53,7 +75,15 @@ function Login() {
       toast.success("Signed in to Admin Panel");
       navigate({ to: "/admin", replace: true });
     } catch (err) {
-      toast.error(err instanceof Error ? err.message : "Invalid email or password");
+      const failure = recordLoginFailure(trimmedEmail);
+      setRateState(checkLoginRateLimit(trimmedEmail));
+      if (failure.locked) {
+        toast.error(`Rate limit exceeded! Login locked for ${Math.ceil(failure.retryAfterSeconds / 60)} minutes.`);
+      } else {
+        toast.error(
+          `${err instanceof Error ? err.message : "Invalid email or password"} (${failure.remainingAttempts} attempts remaining)`,
+        );
+      }
     } finally {
       setBusy(false);
     }
@@ -77,6 +107,16 @@ function Login() {
             </div>
           </div>
 
+          {!rateState.allowed && (
+            <div className="flex items-start gap-2.5 rounded-xl border border-destructive/40 bg-destructive/10 p-3.5 text-xs text-destructive">
+              <ShieldAlert size={16} className="mt-0.5 shrink-0" />
+              <div>
+                <p className="font-semibold">Rate Limit Active — Login Temporarily Locked</p>
+                <p className="mt-0.5">{rateState.reason}</p>
+              </div>
+            </div>
+          )}
+
           <div className="space-y-2">
             <Label htmlFor="email">Admin Email</Label>
             <Input
@@ -87,6 +127,7 @@ function Login() {
               onChange={(e) => setEmail(e.target.value)}
               placeholder="Enter admin email"
               required
+              disabled={!rateState.allowed}
               autoComplete="email"
             />
           </div>
@@ -101,13 +142,14 @@ function Login() {
               onChange={(e) => setPassword(e.target.value)}
               placeholder="Enter admin password"
               required
+              disabled={!rateState.allowed}
               autoComplete="current-password"
             />
           </div>
 
-          <Button type="submit" className="w-full" disabled={busy}>
+          <Button type="submit" className="w-full" disabled={busy || !rateState.allowed}>
             {busy && <Loader2 className="mr-2 animate-spin" size={16} />}
-            Sign In to Admin Panel
+            {!rateState.allowed ? `Locked (${rateState.retryAfterSeconds}s)` : "Sign In to Admin Panel"}
           </Button>
         </form>
       </div>

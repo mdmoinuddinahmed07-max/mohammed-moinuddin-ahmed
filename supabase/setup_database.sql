@@ -357,3 +357,31 @@ SELECT * FROM (VALUES
 ) AS v(degree, institution, year, status, sort_order)
 WHERE NOT EXISTS (SELECT 1 FROM public.education);
 
+
+
+-- 9. Database-Level Rate Limiting Trigger on public.contact_messages
+CREATE OR REPLACE FUNCTION public.enforce_contact_rate_limit()
+RETURNS trigger
+LANGUAGE plpgsql SECURITY DEFINER SET search_path = public
+AS $$
+DECLARE
+  recent_count int;
+BEGIN
+  SELECT count(*) INTO recent_count
+  FROM public.contact_messages
+  WHERE lower(email) = lower(NEW.email)
+    AND created_at > (now() - interval '10 minutes');
+
+  IF recent_count >= 5 THEN
+    RAISE EXCEPTION 'Rate limit exceeded: Too many submissions from this email. Please wait 10 minutes before trying again.'
+      USING ERRCODE = 'P0001';
+  END IF;
+
+  RETURN NEW;
+END $$;
+
+DROP TRIGGER IF EXISTS trg_contact_rate_limit ON public.contact_messages;
+CREATE TRIGGER trg_contact_rate_limit
+  BEFORE INSERT ON public.contact_messages
+  FOR EACH ROW
+  EXECUTE FUNCTION public.enforce_contact_rate_limit();

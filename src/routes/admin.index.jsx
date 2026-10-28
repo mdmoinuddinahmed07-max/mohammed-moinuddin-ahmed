@@ -2,6 +2,7 @@ import { createFileRoute, Link } from "@tanstack/react-router";
 import { useQuery } from "@tanstack/react-query";
 import { supabase } from "@/integrations/supabase/client";
 import { FolderKanban, Wrench, GraduationCap, Inbox, Sparkles, CheckCircle2, Clock } from "lucide-react";
+import { RateLimitPanel } from "@/components/site/RateLimitPanel";
 import { BookingsTableSection } from "./admin.messages";
 
 export const Route = createFileRoute("/admin/")({
@@ -100,6 +101,9 @@ function AdminDashboard() {
           icon={<GraduationCap className="text-muted-foreground" size={18} />}
         />
       </div>
+
+      {/* Rate Limiting & Spam Protection Panel */}
+      <RateLimitPanel />
 
       {/* Embedded Live Bookings & Leads Table right on Dashboard */}
       <div className="space-y-3 pt-2">
